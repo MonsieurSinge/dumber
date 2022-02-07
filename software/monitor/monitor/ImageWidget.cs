@@ -220,7 +220,7 @@ namespace monitor
                 Cairo.Color textFontColor = new Cairo.Color(0.8, 0, 0);
 
                 cr.SelectFontFace("Cantarell", FontSlant.Normal, FontWeight.Bold);
-                cr.SetSourceColor(textFontColor);
+                cr.SetSourceRGBA(textFontColor.R, textFontColor.G, textFontColor.B, textFontColor.A);
                 cr.SetFontSize(16);
 
                 if (position != null)
@@ -275,7 +275,7 @@ namespace monitor
                 Cairo.Color textFontColor = new Cairo.Color(0.8, 0, 0);
 
                 cr.SelectFontFace("Cantarell", FontSlant.Normal, FontWeight.Bold);
-                cr.SetSourceColor(textFontColor);
+                cr.SetSourceRGBA(textFontColor.R, textFontColor.G, textFontColor.B, textFontColor.A);
                 cr.SetFontSize(16);
 
                 string text = "FPS= " + imageFPS.ToString();
