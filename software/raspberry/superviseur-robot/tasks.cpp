@@ -410,7 +410,7 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
         throw std::runtime_error{"Error in read in queue"};
     }/** else {
         cout << "@msg :" << msg << endl << flush;
-    } /**/
+    } */
 
     return msg;
 }

@@ -28,11 +28,11 @@
 #include <alchemy/sem.h>
 #include <alchemy/queue.h>
 
-#include "messages.h"
-#include "commonitor.h"
-#include "comrobot.h"
-#include "camera.h"
-#include "img.h"
+#include "lib/messages.h"
+#include "lib/commonitor.h"
+#include "lib/comrobot.h"
+#include "lib/camera.h"
+#include "lib/img.h"
 
 using namespace std;
 
