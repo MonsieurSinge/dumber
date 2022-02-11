@@ -66,6 +66,7 @@ private:
     ComRobot robot;
     int robotStarted = 0;
     int move = MESSAGE_ROBOT_STOP;
+    Camera camera;
     
     /**********************************************************************/
     /* Tasks                                                              */

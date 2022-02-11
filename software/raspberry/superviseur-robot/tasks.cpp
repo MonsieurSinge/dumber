@@ -16,6 +16,8 @@
  */
 
 #include "tasks.h"
+#include "lib/messages.h"
+#include "lib/comrobot.h"
 #include <stdexcept>
 
 // Déclaration des priorités des taches
@@ -244,6 +246,7 @@ void Tasks::SendToMonTask(void* arg) {
  */
 void Tasks::ReceiveFromMonTask(void *arg) {
     Message *msgRcv;
+    int err;
     
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -257,6 +260,34 @@ void Tasks::ReceiveFromMonTask(void *arg) {
 
     while (1) {
         msgRcv = monitor.Read();
+
+        // fct 5
+        if (msgRcv->GetID() == MessageID::MESSAGE_MONITOR_LOST) {
+            cout << "Perte de communication :'( 0w0" << endl << flush;
+
+            /* stopper le robot
+             * stopper la communication avec le robot
+             * fermer le serveur
+             * déconnecter la caméra
+             * revenir au démarrage du serveur
+             * */
+
+            // fct 6
+            // stopper le robot
+            Message *msg = ComRobot::Stop();
+            robot.Write(msg);
+            // stop comm robot
+            robot.PowerOff();
+            // fermer le serveur
+            monitor.Close();
+            camera.Close();
+            // revenir au démarrage du serveur
+            if (err = rt_task_start(&th_server, (void(*)(void*)) & Tasks::ServerTask, this)) {
+                cerr << "Error task start: " << strerror(-err) << endl << flush;
+                exit(EXIT_FAILURE);
+            }
+        }
+
         cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
 
         if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) {
