@@ -111,7 +111,7 @@ private:
     /**
      * @brief Thread sending data to monitor.
      */
-    void SendToMonTask(void *arg);
+    [[noreturn]] void SendToMonTask(void *arg);
         
     /**
      * @brief Thread receiving data from monitor.
@@ -121,17 +121,17 @@ private:
     /**
      * @brief Thread opening communication with the robot.
      */
-    void OpenComRobot(void *arg);
+    [[noreturn]] void OpenComRobot(void *arg);
 
     /**
      * @brief Thread starting the communication with the robot.
      */
-    void StartRobotTask(void *arg);
+    [[noreturn]] void StartRobotTask(void *arg);
     
     /**
      * @brief Thread handling control of the robot.
      */
-    void MoveTask(void *arg);
+    [[noreturn]] void MoveTask(void *arg);
     
     /**********************************************************************/
     /* Queue services                                                     */
