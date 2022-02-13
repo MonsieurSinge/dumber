@@ -260,9 +260,10 @@ void Tasks::ReceiveFromMonTask(void *arg) {
 
     while (true) {
         msgRcv = monitor.Read();
+        cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
 
         // fct 5
-        if (msgRcv->GetID() == MessageID::MESSAGE_MONITOR_LOST) {
+        if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) {
             cout << "Perte de communication :'( 0w0" << endl << flush;
 
             /* stopper le robot
@@ -282,15 +283,10 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             monitor.Close();
             camera.Close();
             // revenir au démarrage du serveur
-            if (err = rt_task_start(&th_server, (void(*)(void*)) & Tasks::ServerTask, this)) {
+            if ((err = rt_task_start(&th_server, (void(*)(void*)) & Tasks::ServerTask, this))) {
                 cerr << "Error task start: " << strerror(-err) << endl << flush;
                 exit(EXIT_FAILURE);
             }
-        }
-
-        cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
-
-        if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) {
             delete(msgRcv);
             exit(-1);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
