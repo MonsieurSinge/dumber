@@ -96,6 +96,10 @@ void Tasks::Init() {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    if ((err = rt_sem_create(&sem_monitor, nullptr, 0, S_FIFO))) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     cout << "Semaphores created successfully" << endl << flush;
 
     /**************************************************************************************/
@@ -194,26 +198,30 @@ void Tasks::Join() {
  */
 void Tasks::ServerTask(void *arg) {
     int status;
-    
-    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
-    // Synchronization barrier (waiting that all tasks are started)
-    rt_sem_p(&sem_barrier, TM_INFINITE);
 
-    /**************************************************************************************/
-    /* The task server starts here                                                        */
-    /**************************************************************************************/
-    rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-    status = monitor.Open(SERVER_PORT);
-    rt_mutex_release(&mutex_monitor);
+        cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+        // Synchronization barrier (waiting that all tasks are started)
+        rt_sem_p(&sem_barrier, TM_INFINITE);
 
-    cout << "Open server on port " << (SERVER_PORT) << " (" << status << ")" << endl;
+    while(true) {
+        /**************************************************************************************/
+        /* The task server starts here                                                        */
+        /**************************************************************************************/
+        rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+        status = monitor.Open(SERVER_PORT);
+        rt_mutex_release(&mutex_monitor);
 
-    if (status < 0) throw std::runtime_error {
-        "Unable to start server on port " + std::to_string(SERVER_PORT)
-    };
-    monitor.AcceptClient(); // Wait the monitor client
-    cout << "Rock'n'Roll baby, client accepted!" << endl << flush;
-    rt_sem_broadcast(&sem_serverOk);
+        cout << "Open server on port " << (SERVER_PORT) << " (" << status << ")" << endl;
+
+        if (status < 0)
+            throw std::runtime_error{
+                    "Unable to start server on port " + std::to_string(SERVER_PORT)
+            };
+        monitor.AcceptClient(); // Wait the monitor client
+        cout << "Rock'n'Roll baby, client accepted!" << endl << flush;
+        rt_sem_broadcast(&sem_serverOk);
+        rt_sem_p(&sem_monitor, TM_INFINITE);
+    }
 }
 
 /**
@@ -244,66 +252,65 @@ void Tasks::ServerTask(void *arg) {
 /**
  * @brief Thread receiving data from monitor.
  */
-void Tasks::ReceiveFromMonTask(void *arg) {
+[[noreturn]] void Tasks::ReceiveFromMonTask(void *arg) {
     Message *msgRcv;
     int err;
+    bool connected;
     
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
-    
+
     /**************************************************************************************/
     /* The task receiveFromMon starts here                                                */
     /**************************************************************************************/
-    rt_sem_p(&sem_serverOk, TM_INFINITE);
-    cout << "Received message from monitor activated" << endl << flush;
+    while(true) {
+        rt_sem_p(&sem_serverOk, TM_INFINITE);
+        cout << "Received message from monitor activated" << endl << flush;
 
-    while (true) {
-        msgRcv = monitor.Read();
-        cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
+        connected = true;
+        while (connected) {
+            msgRcv = monitor.Read();
+            cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
 
-        // fct 5
-        if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) {
-            cout << "Perte de communication :'( 0w0" << endl << flush;
+            if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) {
+                cout << "Perte de communication :'( 0w0" << endl << flush;
 
-            /* stopper le robot
-             * stopper la communication avec le robot
-             * fermer le serveur
-             * déconnecter la caméra
-             * revenir au démarrage du serveur
-             * */
+                /* stopper le robot
+                 * stopper la communication avec le robot
+                 * fermer le serveur
+                 * déconnecter la caméra
+                 * revenir au démarrage du serveur
+                 * */
 
-            // fct 6
-            // stopper le robot
-            Message *msg = ComRobot::Stop();
-            robot.Write(msg);
-            // stop comm robot
-            ComRobot::PowerOff();
-            // fermer le serveur
-            monitor.Close();
-            camera.Close();
-            // revenir au démarrage du serveur
-            if ((err = rt_task_start(&th_server, (void(*)(void*)) & Tasks::ServerTask, this))) {
-                cerr << "Error task start: " << strerror(-err) << endl << flush;
-                exit(EXIT_FAILURE);
+                // fct 6
+                // stopper le robot
+                Message *msg = ComRobot::Stop();
+                robot.Write(msg);
+                // stop comm robot
+                robot.Close();
+                // close cam
+                camera.Close();
+                // fermer le serveur
+                monitor.Close();
+                rt_sem_v(&sem_monitor);
+                connected = false;
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
+                rt_sem_v(&sem_openComRobot);
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
+                rt_sem_v(&sem_startRobot);
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
+                       msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
+                       msgRcv->CompareID(MESSAGE_ROBOT_GO_LEFT) ||
+                       msgRcv->CompareID(MESSAGE_ROBOT_GO_RIGHT) ||
+                       msgRcv->CompareID(MESSAGE_ROBOT_STOP)) {
+
+                rt_mutex_acquire(&mutex_move, TM_INFINITE);
+                move = msgRcv->GetID();
+                rt_mutex_release(&mutex_move);
             }
-            delete(msgRcv);
-            exit(-1);
-        } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
-            rt_sem_v(&sem_openComRobot);
-        } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
-            rt_sem_v(&sem_startRobot);
-        } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
-                msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
-                msgRcv->CompareID(MESSAGE_ROBOT_GO_LEFT) ||
-                msgRcv->CompareID(MESSAGE_ROBOT_GO_RIGHT) ||
-                msgRcv->CompareID(MESSAGE_ROBOT_STOP)) {
-
-            rt_mutex_acquire(&mutex_move, TM_INFINITE);
-            move = msgRcv->GetID();
-            rt_mutex_release(&mutex_move);
+            delete (msgRcv); // mus be deleted manually, no consumer
         }
-        delete(msgRcv); // mus be deleted manually, no consumer
     }
 }
 

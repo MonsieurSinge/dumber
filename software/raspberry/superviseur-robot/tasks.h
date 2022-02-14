@@ -93,6 +93,7 @@ private:
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
+    RT_SEM sem_monitor;
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -116,7 +117,7 @@ private:
     /**
      * @brief Thread receiving data from monitor.
      */
-    void ReceiveFromMonTask(void *arg);
+    [[noreturn]] void ReceiveFromMonTask(void *arg);
     
     /**
      * @brief Thread opening communication with the robot.
