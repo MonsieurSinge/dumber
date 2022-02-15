@@ -29,6 +29,8 @@
 #define PRIORITY_TSTARTROBOT 20
 #define PRIORITY_TCAMERA 21
 
+#define RETRY_ERR_ROBOT 3
+
 /*
  * Some remarks:
  * 1- This program is mostly a template. It shows you how to create tasks, semaphore
@@ -68,6 +70,10 @@ void Tasks::Init() {
         exit(EXIT_FAILURE);
     }
     if ((err = rt_mutex_create(&mutex_robotStarted, nullptr))) {
+        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if ((err = rt_mutex_create(&mutex_robotConnected, nullptr))) {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -320,6 +326,8 @@ void Tasks::ServerTask(void *arg) {
 [[noreturn]] void Tasks::OpenComRobot(void *arg) {
     int status;
     int err;
+    bool rc;
+    int err_counter = 0;
 
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -334,6 +342,7 @@ void Tasks::ServerTask(void *arg) {
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
         status = robot.Open();
         rt_mutex_release(&mutex_robot);
+        rc = true;
         cout << status;
         cout << ")" << endl << flush;
 
@@ -344,6 +353,32 @@ void Tasks::ServerTask(void *arg) {
             msgSend = new Message(MESSAGE_ANSWER_ACK);
         }
         WriteInQueue(&q_messageToMon, msgSend); // msgSend will be deleted by sendToMon
+        //TODO: fix crash when robot reconnecting
+        while(rc) {
+            /* CHECK IF CONNECTION STILL ALIVE */
+
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+            Message *msgPing = robot.Write(ComRobot::Ping());
+            rt_mutex_release(&mutex_robot);
+
+            if (msgPing->GetID() == MESSAGE_ANSWER_ACK) {
+                err_counter = 0;
+            } else {
+                if (++err_counter == RETRY_ERR_ROBOT+1) { // if too many errors, close connection and display error
+                    monitor.Write(new Message(MESSAGE_ANSWER_ROBOT_TIMEOUT));
+                    robot.Close();
+                    rc = false;
+                    rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
+                    robotConnected = rc;
+                    rt_mutex_release(&mutex_robotConnected);
+                    // reopen
+                    rt_sem_v(&sem_openComRobot);
+                } else if(err_counter > RETRY_ERR_ROBOT+1) {
+                    err_counter = RETRY_ERR_ROBOT+2;
+                }
+            }
+            delete (msgPing);
+        }
     }
 }
 
