@@ -106,6 +106,10 @@ void Tasks::Init() {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    if ((err = rt_sem_create(&sem_startWithWD, nullptr, 0, S_FIFO))) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     cout << "Semaphores created successfully" << endl << flush;
 
     /**************************************************************************************/
@@ -321,6 +325,8 @@ void Tasks::ServerTask(void *arg) {
                 rt_sem_v(&sem_openComRobot);
             } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
                 rt_sem_v(&sem_startRobot);
+            } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)) {
+                rt_sem_v(&sem_startWithWD);
             } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
                        msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
                        msgRcv->CompareID(MESSAGE_ROBOT_GO_LEFT) ||
@@ -358,7 +364,6 @@ void Tasks::ServerTask(void *arg) {
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
         status = robot.Open();
         rt_mutex_release(&mutex_robot);
-        rc = true;
         cout << status;
         cout << ")" << endl << flush;
 
@@ -369,8 +374,8 @@ void Tasks::ServerTask(void *arg) {
             msgSend = new Message(MESSAGE_ANSWER_ACK);
         }
         WriteInQueue(&q_messageToMon, msgSend); // msgSend will be deleted by sendToMon
-        //TODO: fix crash when robot reconnecting
-        while(rc) {
+
+        do {
             /* CHECK IF CONNECTION STILL ALIVE */
 
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
@@ -379,6 +384,10 @@ void Tasks::ServerTask(void *arg) {
 
             if (msgPing->GetID() == MESSAGE_ANSWER_ACK) {
                 err_counter = 0;
+                rc = true;
+                rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
+                robotConnected = rc;
+                rt_mutex_release(&mutex_robotConnected);
             } else {
                 if (++err_counter == RETRY_ERR_ROBOT+1) { // if too many errors, close connection and display error
                     monitor.Write(new Message(MESSAGE_ANSWER_ROBOT_TIMEOUT));
@@ -394,7 +403,7 @@ void Tasks::ServerTask(void *arg) {
                 }
             }
             delete (msgPing);
-        }
+        } while(rc);
     }
 }
 
@@ -450,6 +459,13 @@ void Tasks::ServerTask(void *arg) {
 
     while (true) {
         rt_task_wait_period(nullptr);
+
+        rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
+        bool rc = robotConnected;
+        rt_mutex_release(&mutex_robotConnected);
+
+        if(!rc) continue; // WHILE THE ROBOT IS NOT CONNECTED WE DO NOTHING
+
         cout << "Periodic movement update";
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
         rs = robotStarted;

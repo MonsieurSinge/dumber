@@ -65,7 +65,7 @@ private:
     ComMonitor monitor;
     ComRobot robot;
     int robotStarted = 0;
-    bool robotConnected = true;
+    bool robotConnected = false;
     int move = MESSAGE_ROBOT_STOP;
     Camera camera;
     
@@ -98,6 +98,7 @@ private:
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
     RT_SEM sem_monitor;
+    RT_SEM sem_startWithWD;
 
     /**********************************************************************/
     /* Message queues                                                     */
