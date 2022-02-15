@@ -137,6 +137,11 @@ private:
      * @brief Thread handling control of the robot.
      */
     [[noreturn]] void MoveTask(void *arg);
+
+
+    [[noreturn]] void BatteryTask(void *arg);
+
+    [[noreturn]] void WatchDogTask(void *arg);
     
     /**********************************************************************/
     /* Queue services                                                     */

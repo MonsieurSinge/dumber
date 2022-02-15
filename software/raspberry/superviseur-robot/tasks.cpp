@@ -431,6 +431,7 @@ void Tasks::ServerTask(void *arg) {
     }
 }
 
+
 /**
  * @brief Thread handling control of the robot.
  */
@@ -500,3 +501,74 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
     return msg;
 }
 
+[[noreturn]] void Tasks::BatteryTask(void *arg) {
+    bool rc;
+    int cpMove;
+
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+
+    /**************************************************************************************/
+    /* The task starts here                                                               */
+    /**************************************************************************************/
+    rt_task_set_periodic(nullptr, TM_NOW, 500000000); // periode de 500 ms entre chaque actualisation
+
+    while (true) {
+        rt_task_wait_period(nullptr);
+        rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
+        rc = robotConnected;
+        rt_mutex_release(&mutex_robotConnected);
+        if (rc) {
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+            Message *msgBattery = robot.Write(ComRobot::GetBattery());
+            rt_mutex_release(&mutex_robot);
+
+            cout << "Periodic battery update: " << msgBattery->ToString() << endl << flush;
+            WriteInQueue(&q_messageToMon, msgBattery);
+        }
+    }
+}
+
+[[noreturn]] void Tasks::WatchDogTask(void *arg) {
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+    bool rc = true;
+
+    /**************************************************************************************/
+    /* The task startRobot starts here                                                    */
+    /**************************************************************************************/
+
+    rt_task_set_periodic(nullptr, TM_NOW, 1000000000); // periode de 1 s entre chaque actualisation
+    while (true) {
+
+        Message * msgSend;
+        rt_sem_p(&sem_startWithWD, TM_INFINITE);
+        cout << "Start robot with watchdog (";
+        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+        msgSend = robot.Write(ComRobot::StartWithWD());
+        rt_mutex_release(&mutex_robot);
+        cout << msgSend->GetID();
+        cout << ")" << endl;
+
+        cout << "Movement answer: " << msgSend->ToString() << endl << flush;
+        WriteInQueue(&q_messageToMon, msgSend);  // msgSend will be deleted by sendToMon
+
+        if (msgSend->GetID() == MESSAGE_ANSWER_ACK) {
+            rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+            robotStarted = 1;
+            rt_mutex_release(&mutex_robotStarted);
+        }
+
+        while (rc) {
+            rt_task_wait_period(nullptr);
+            rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
+            rc = robotConnected;
+            rt_mutex_release(&mutex_robotConnected);
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+            robot.Write(ComRobot::ReloadWD());
+            rt_mutex_release(&mutex_robot);
+        }
+    }
+}
