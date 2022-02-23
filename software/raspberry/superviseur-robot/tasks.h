@@ -67,6 +67,7 @@ private:
     int robotStarted = 0;
     bool robotConnected = false;
     bool monitorConnected = false;
+    int robot_err_counter = 0;
     int move = MESSAGE_ROBOT_STOP;
     Camera camera;
     

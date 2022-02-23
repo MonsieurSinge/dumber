@@ -362,14 +362,10 @@ void Tasks::ServerTask(void *arg) {
  */
 [[noreturn]] void Tasks::OpenComRobot(void *arg) {
     int status;
-    int err;
-    bool rc;
-    int err_counter = 0;
 
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
-    rt_task_set_periodic(nullptr, TM_NOW, 1000000000); //attente de 1s
     
     /**************************************************************************************/
     /* The task openComRobot starts here                                                  */
@@ -390,34 +386,6 @@ void Tasks::ServerTask(void *arg) {
             msgSend = new Message(MESSAGE_ANSWER_ACK);
         }
         WriteInQueue(&q_messageToMon, msgSend); // msgSend will be deleted by sendToMon
-
-        do {
-            /* CHECK IF CONNECTION STILL ALIVE */
-
-            Message *msgPing = this->WriteToRobot(ComRobot::Ping());
-
-            if (msgPing->GetID() == MESSAGE_ANSWER_ACK) {
-                err_counter = 0;
-                rc = true;
-                rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
-                robotConnected = rc;
-                rt_mutex_release(&mutex_robotConnected);
-            } else {
-                if (++err_counter == RETRY_ERR_ROBOT+1) { // if too many errors, close connection and display error
-                    WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_ROBOT_TIMEOUT));
-                    robot.Close();
-                    rc = false;
-                    rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
-                    robotConnected = rc;
-                    rt_mutex_release(&mutex_robotConnected);
-                    // reopen
-                    rt_sem_v(&sem_openComRobot);
-                } else if(err_counter > RETRY_ERR_ROBOT+1) {
-                    err_counter = RETRY_ERR_ROBOT+2;
-                }
-            }
-            rt_task_wait_period(nullptr);
-        } while(rc);
     }
 }
 
@@ -532,6 +500,27 @@ Message *Tasks::WriteToRobot(Message *msg) {
     rt_mutex_acquire(&mutex_robot, TM_INFINITE);
     msgRet = robot.Write(msg);
     rt_mutex_release(&mutex_robot);
+
+    /* CHECK IF CONNECTION STILL ALIVE */
+
+    if (msgRet->CompareID(MESSAGE_ANSWER_COM_ERROR)) {
+        if (++this->robot_err_counter == RETRY_ERR_ROBOT+1) { // if too many errors, close connection and display error
+            WriteInQueue(&q_messageToMon, msgRet);
+            robot.Close();
+            rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
+            robotConnected = false;
+            rt_mutex_release(&mutex_robotConnected);
+            // reopen
+            rt_sem_v(&sem_openComRobot);
+        } else if(this->robot_err_counter > RETRY_ERR_ROBOT+1) {
+            this->robot_err_counter = RETRY_ERR_ROBOT+2; // in order to avoid overflow we just restrict the value to +2
+        }
+    } else {
+        this->robot_err_counter = 0;
+        rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
+        robotConnected = true;
+        rt_mutex_release(&mutex_robotConnected);
+    }
 
     return msgRet;
 }
