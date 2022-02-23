@@ -329,7 +329,7 @@ void Tasks::ServerTask(void *arg) {
                 // fct 6
                 // stopper le robot
                 Message *msg = ComRobot::Stop();
-                robot.Write(msg);
+                this->WriteToRobot(msg);
                 // close cam
                 camera.Close();
                 // stop comm robot & le serveur
@@ -394,9 +394,7 @@ void Tasks::ServerTask(void *arg) {
         do {
             /* CHECK IF CONNECTION STILL ALIVE */
 
-            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            Message *msgPing = robot.Write(ComRobot::Ping());
-            rt_mutex_release(&mutex_robot);
+            Message *msgPing = this->WriteToRobot(ComRobot::Ping());
 
             if (msgPing->GetID() == MESSAGE_ANSWER_ACK) {
                 err_counter = 0;
@@ -438,9 +436,7 @@ void Tasks::ServerTask(void *arg) {
         Message * msgSend;
         rt_sem_p(&sem_startRobot, TM_INFINITE);
         cout << "Start robot without watchdog (";
-        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-        msgSend = robot.Write(ComRobot::StartWithoutWD());
-        rt_mutex_release(&mutex_robot);
+        msgSend = this->WriteToRobot(ComRobot::StartWithoutWD());
         cout << msgSend->GetID();
         cout << ")" << endl;
 
@@ -491,10 +487,8 @@ void Tasks::ServerTask(void *arg) {
             rt_mutex_release(&mutex_move);
             
             cout << " move: " << cpMove;
-            
-            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            robot.Write(new Message((MessageID)cpMove));
-            rt_mutex_release(&mutex_robot);
+
+            this->WriteToRobot(new Message((MessageID)cpMove));
         }
         cout << endl << flush;
     }
@@ -532,6 +526,16 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
     return msg;
 }
 
+Message *Tasks::WriteToRobot(Message *msg) {
+    Message *msgRet = nullptr;
+
+    rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+    msgRet = robot.Write(msg);
+    rt_mutex_release(&mutex_robot);
+
+    return msgRet;
+}
+
 [[noreturn]] void Tasks::BatteryTask(void *arg) {
     bool rc;
     int cpMove;
@@ -551,9 +555,7 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
         rc = robotConnected;
         rt_mutex_release(&mutex_robotConnected);
         if (rc) {
-            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            Message *msgBattery = robot.Write(ComRobot::GetBattery());
-            rt_mutex_release(&mutex_robot);
+            Message *msgBattery = this->WriteToRobot(ComRobot::GetBattery());
 
             cout << "Periodic battery update: " << msgBattery->ToString() << endl << flush;
             WriteInQueue(&q_messageToMon, msgBattery);
@@ -576,9 +578,7 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
         Message * msgSend;
         rt_sem_p(&sem_startWithWD, TM_INFINITE);
         cout << "Start robot with watchdog (";
-        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-        msgSend = robot.Write(ComRobot::StartWithWD());
-        rt_mutex_release(&mutex_robot);
+        msgSend = this->WriteToRobot(ComRobot::StartWithWD());
         cout << msgSend->GetID();
         cout << ")" << endl;
 
@@ -596,9 +596,7 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
         rt_mutex_release(&mutex_robotConnected);
         while (rc) {
             rt_task_wait_period(nullptr);
-            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            robot.Write(ComRobot::ReloadWD());
-            rt_mutex_release(&mutex_robot);
+            this->WriteToRobot(ComRobot::ReloadWD());
             rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
             rc = robotConnected;
             rt_mutex_release(&mutex_robotConnected);

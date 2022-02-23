@@ -145,6 +145,13 @@ private:
     [[noreturn]] void BatteryTask(void *arg);
 
     [[noreturn]] void WatchDogTask(void *arg);
+
+    /**
+     * Write a message to a robot
+     * @param msg Message
+     * @return Message answer
+     */
+    Message *WriteToRobot(Message *msg);
     
     /**********************************************************************/
     /* Queue services                                                     */
