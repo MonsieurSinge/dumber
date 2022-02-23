@@ -66,6 +66,7 @@ private:
     ComRobot robot;
     int robotStarted = 0;
     bool robotConnected = false;
+    bool monitorConnected = false;
     int move = MESSAGE_ROBOT_STOP;
     Camera camera;
     
@@ -88,6 +89,7 @@ private:
     RT_MUTEX mutex_robot;
     RT_MUTEX mutex_robotStarted;
     RT_MUTEX mutex_robotConnected;
+    RT_MUTEX mutex_monitorConnected;
     RT_MUTEX mutex_move;
 
     /**********************************************************************/

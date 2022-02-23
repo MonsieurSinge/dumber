@@ -77,6 +77,10 @@ void Tasks::Init() {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    if ((err = rt_mutex_create(&mutex_monitorConnected, nullptr))) {
+        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     if ((err = rt_mutex_create(&mutex_move, nullptr))) {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
@@ -207,6 +211,9 @@ void Tasks::Run() {
  * @brief Arrêt des tâches
  */
 void Tasks::Stop() {
+    rt_mutex_acquire(&mutex_monitorConnected, TM_INFINITE);
+    monitorConnected = false;
+    rt_mutex_release(&mutex_monitorConnected);
     monitor.Close();
     robot.Close();
 }
@@ -243,7 +250,11 @@ void Tasks::ServerTask(void *arg) {
             throw std::runtime_error{
                     "Unable to start server on port " + std::to_string(SERVER_PORT)
             };
+
         monitor.AcceptClient(); // Wait the monitor client
+        rt_mutex_acquire(&mutex_monitorConnected, TM_INFINITE);
+        monitorConnected = true;
+        rt_mutex_release(&mutex_monitorConnected);
         cout << "Rock'n'Roll baby, client accepted!" << endl << flush;
         rt_sem_broadcast(&sem_serverOk);
         rt_sem_p(&sem_monitor, TM_INFINITE);
@@ -269,9 +280,15 @@ void Tasks::ServerTask(void *arg) {
         cout << "wait msg to send" << endl << flush;
         msg = ReadInQueue(&q_messageToMon);
         cout << "Send msg to mon: " << msg->ToString() << endl << flush;
-        rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-        monitor.Write(msg); // The message is deleted with the Write
-        rt_mutex_release(&mutex_monitor);
+        bool mc = false;
+        rt_mutex_acquire(&mutex_monitorConnected, TM_INFINITE);
+        mc = monitorConnected;
+        rt_mutex_release(&mutex_monitorConnected);
+        if(mc) {
+            rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+            monitor.Write(msg); // The message is deleted with the Write
+            rt_mutex_release(&mutex_monitor);
+        }
     }
 }
 
@@ -313,12 +330,10 @@ void Tasks::ServerTask(void *arg) {
                 // stopper le robot
                 Message *msg = ComRobot::Stop();
                 robot.Write(msg);
-                // stop comm robot
-                robot.Close();
                 // close cam
                 camera.Close();
-                // fermer le serveur
-                monitor.Close();
+                // stop comm robot & le serveur
+                this->Stop();
                 rt_sem_v(&sem_monitor);
                 connected = false;
             } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
@@ -354,6 +369,7 @@ void Tasks::ServerTask(void *arg) {
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
+    rt_task_set_periodic(nullptr, TM_NOW, 1000000000); //attente de 1s
     
     /**************************************************************************************/
     /* The task openComRobot starts here                                                  */
@@ -390,7 +406,7 @@ void Tasks::ServerTask(void *arg) {
                 rt_mutex_release(&mutex_robotConnected);
             } else {
                 if (++err_counter == RETRY_ERR_ROBOT+1) { // if too many errors, close connection and display error
-                    monitor.Write(new Message(MESSAGE_ANSWER_ROBOT_TIMEOUT));
+                    WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_ROBOT_TIMEOUT));
                     robot.Close();
                     rc = false;
                     rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
@@ -402,7 +418,7 @@ void Tasks::ServerTask(void *arg) {
                     err_counter = RETRY_ERR_ROBOT+2;
                 }
             }
-            delete (msgPing);
+            rt_task_wait_period(nullptr);
         } while(rc);
     }
 }
@@ -419,7 +435,6 @@ void Tasks::ServerTask(void *arg) {
     /* The task startRobot starts here                                                    */
     /**************************************************************************************/
     while (true) {
-
         Message * msgSend;
         rt_sem_p(&sem_startRobot, TM_INFINITE);
         cout << "Start robot without watchdog (";
@@ -558,7 +573,6 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
 
     rt_task_set_periodic(nullptr, TM_NOW, 1000000000); // periode de 1 s entre chaque actualisation
     while (true) {
-
         Message * msgSend;
         rt_sem_p(&sem_startWithWD, TM_INFINITE);
         cout << "Start robot with watchdog (";
@@ -577,14 +591,17 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
             rt_mutex_release(&mutex_robotStarted);
         }
 
+        rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
+        rc = robotConnected;
+        rt_mutex_release(&mutex_robotConnected);
         while (rc) {
             rt_task_wait_period(nullptr);
-            rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
-            rc = robotConnected;
-            rt_mutex_release(&mutex_robotConnected);
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
             robot.Write(ComRobot::ReloadWD());
             rt_mutex_release(&mutex_robot);
+            rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
+            rc = robotConnected;
+            rt_mutex_release(&mutex_robotConnected);
         }
     }
 }
