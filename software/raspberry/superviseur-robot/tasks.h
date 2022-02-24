@@ -153,6 +153,11 @@ private:
      * @return Message answer
      */
     Message *WriteToRobot(Message *msg);
+
+    /**
+     * @brief Arrêt des tâches robot
+     */
+    void CloseRobot();
     
     /**********************************************************************/
     /* Queue services                                                     */

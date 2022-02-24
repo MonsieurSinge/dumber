@@ -215,7 +215,18 @@ void Tasks::Stop() {
     monitorConnected = false;
     rt_mutex_release(&mutex_monitorConnected);
     monitor.Close();
+    this->CloseRobot();
+}
+
+void Tasks::CloseRobot() {
+    rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+    robotStarted = 0;
+    rt_mutex_release(&mutex_robotStarted);
+    rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
+    robotConnected = false;
+    rt_mutex_release(&mutex_robotConnected);
     robot.Close();
+    this->robot_err_counter = 0;
 }
 
 /**
@@ -328,8 +339,11 @@ void Tasks::ServerTask(void *arg) {
 
                 // fct 6
                 // stopper le robot
-                Message *msg = ComRobot::Stop();
-                this->WriteToRobot(msg);
+                rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+                robotStarted = 0;
+                rt_mutex_release(&mutex_robotStarted);
+                Message *msg = this->WriteToRobot(ComRobot::Stop());
+                WriteInQueue(&q_messageToMon, msg);
                 // close cam
                 camera.Close();
                 // stop comm robot & le serveur
@@ -503,18 +517,16 @@ Message *Tasks::WriteToRobot(Message *msg) {
 
     /* CHECK IF CONNECTION STILL ALIVE */
 
-    if (msgRet->CompareID(MESSAGE_ANSWER_COM_ERROR)) {
-        if (++this->robot_err_counter == RETRY_ERR_ROBOT+1) { // if too many errors, close connection and display error
+    if (msgRet->CompareID(MESSAGE_ANSWER_COM_ERROR) ||
+            msgRet->CompareID(MESSAGE_ANSWER_ROBOT_TIMEOUT)) {
+        if (++this->robot_err_counter >= RETRY_ERR_ROBOT+1) { // if too many errors, close connection and display error
             WriteInQueue(&q_messageToMon, msgRet);
-            robot.Close();
-            rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
-            robotConnected = false;
-            rt_mutex_release(&mutex_robotConnected);
+            this->CloseRobot();
             // reopen
             rt_sem_v(&sem_openComRobot);
-        } else if(this->robot_err_counter > RETRY_ERR_ROBOT+1) {
             this->robot_err_counter = RETRY_ERR_ROBOT+2; // in order to avoid overflow we just restrict the value to +2
         }
+        msgRet = new Message(MESSAGE_ANSWER_NACK);
     } else {
         this->robot_err_counter = 0;
         rt_mutex_acquire(&mutex_robotConnected, TM_INFINITE);
