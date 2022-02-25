@@ -28,6 +28,8 @@
 #define PRIORITY_TRECEIVEFROMMON 25
 #define PRIORITY_TSTARTROBOT 20
 #define PRIORITY_TCAMERA 21
+#define PRIORITY_TBATTERY 27
+#define PRIORITY_TWATCHDOG 28
 
 #define RETRY_ERR_ROBOT 3
 
@@ -143,11 +145,11 @@ void Tasks::Init() {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if ((err = rt_task_create(&th_battery, "th_battery", 0, PRIORITY_TMOVE, 0))) {
+    if ((err = rt_task_create(&th_battery, "th_battery", 0, PRIORITY_TBATTERY, 0))) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if ((err = rt_task_create(&th_watchdog, "th_watchdog", 0, PRIORITY_TMOVE, 0))) {
+    if ((err = rt_task_create(&th_watchdog, "th_watchdog", 0, PRIORITY_TWATCHDOG, 0))) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
